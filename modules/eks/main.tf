@@ -1,66 +1,157 @@
-resource "aws_eks_cluster" "this" {
-  name     = var.cluster_name
-  role_arn = var.cluster_role_arn
+# ===============================
+# EKS Cluster Resource
+# ===============================
+
+resource "aws_eks_cluster" "eks_cluster" {
+  name                      = var.cluster_name
+  enabled_cluster_log_types = var.enabled_cluster_log_types
+  role_arn                  = aws_iam_role.cluster_role.arn
+  version                   = var.eks_cluster_version
 
   vpc_config {
-    subnet_ids = var.subnet_ids
+    subnet_ids              = var.subnets
+    endpoint_private_access = var.endpoint_private
+    endpoint_public_access  = var.endpoint_public
   }
 
-  depends_on = [aws_iam_role.eks_cluster_role]
+  tags = merge(
+    {
+      Name        = "${var.cluster_name}-cluster"
+      Provisioner = "Terraform"
+    },
+    var.tags
+  )
+
+  depends_on = [
+    aws_iam_role_policy_attachment.eks-AmazonEKSClusterPolicy,
+    aws_iam_role_policy_attachment.eks-AmazonEKSServicePolicy
+  ]
 }
 
-resource "aws_iam_role" "eks_cluster_role" {
-  name = "${var.cluster_name}-eks-role"
-  assume_role_policy = data.aws_iam_policy_document.eks_assume_role_policy.json
+# ===============================
+# EKS Node Groups Module
+# ===============================
+
+module "node_groups" {
+  source            = "./modules/eks_node_group"
+  create_node_group = var.create_node_group
+  cluster_name      = aws_eks_cluster.eks_cluster.id
+  node_role_arn     = aws_iam_role.node_group_role.arn
+  node_groups       = var.node_groups
 }
 
-data "aws_iam_policy_document" "eks_assume_role_policy" {
+# ===============================
+# EKS Cluster IAM Role
+# ===============================
+
+resource "aws_iam_role" "cluster_role" {
+  name               = "${var.cluster_name}-cluster-role"
+  assume_role_policy = data.aws_iam_policy_document.cluster_assume_role_policy.json
+
+  tags = merge(
+    {
+      Name        = "${var.cluster_name}-cluster_iam_role"
+      Provisioner = "Terraform"
+    },
+    var.tags
+  )
+}
+
+data "aws_iam_policy_document" "cluster_assume_role_policy" {
   statement {
     effect = "Allow"
+
     principals {
       type        = "Service"
       identifiers = ["eks.amazonaws.com"]
     }
+
     actions = ["sts:AssumeRole"]
   }
 }
 
-resource "aws_eks_node_group" "api_nodes" {
-  cluster_name    = aws_eks_cluster.this.name
-  node_group_name = "api-node-group"
-  node_role_arn   = aws_iam_role.eks_node_role.arn
-  subnet_ids      = var.api_subnet_ids
-  scaling_config {
-    desired_size = 1
-    max_size     = 4
-    min_size     = 1
-  }
+resource "aws_iam_role_policy_attachment" "eks-AmazonEKSClusterPolicy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+  role       = aws_iam_role.cluster_role.name
 }
 
-resource "aws_eks_node_group" "db_nodes" {
-  cluster_name    = aws_eks_cluster.this.name
-  node_group_name = "db-node-group"
-  node_role_arn   = aws_iam_role.eks_node_role.arn
-  subnet_ids      = var.db_subnet_ids
-  scaling_config {
-    desired_size = 1
-    max_size     = 2
-    min_size     = 1
-  }
+resource "aws_iam_role_policy_attachment" "eks-AmazonEKSServicePolicy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSServicePolicy"
+  role       = aws_iam_role.cluster_role.name
 }
 
-resource "aws_iam_role" "eks_node_role" {
-  name = "${var.cluster_name}-eks-node-role"
-  assume_role_policy = data.aws_iam_policy_document.eks_node_assume_role_policy.json
+# ===============================
+# Node Group IAM Role
+# ===============================
+
+resource "aws_iam_role" "node_group_role" {
+  name               = "${var.cluster_name}-node-group-role"
+  assume_role_policy = data.aws_iam_policy_document.node_group_assume_role_policy.json
+
+  tags = merge(
+    {
+      Name        = "${var.cluster_name}-node_group_iam_role"
+      Provisioner = "Terraform"
+    },
+    var.tags
+  )
 }
 
-data "aws_iam_policy_document" "eks_node_assume_role_policy" {
+data "aws_iam_policy_document" "node_group_assume_role_policy" {
   statement {
     effect = "Allow"
+
     principals {
       type        = "Service"
       identifiers = ["ec2.amazonaws.com"]
     }
+
     actions = ["sts:AssumeRole"]
   }
+}
+
+resource "aws_iam_role_policy_attachment" "node-AmazonEKSWorkerNodePolicy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+  role       = aws_iam_role.node_group_role.name
+}
+
+resource "aws_iam_role_policy_attachment" "node-AmazonEKS_CNI_Policy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+  role       = aws_iam_role.node_group_role.name
+}
+
+resource "aws_iam_role_policy_attachment" "node-AmazonEC2ContainerRegistryReadOnly" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+  role       = aws_iam_role.node_group_role.name
+}
+
+resource "aws_iam_role_policy_attachment" "node-AmazonEC2FullAccess" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
+  role       = aws_iam_role.node_group_role.name
+}
+
+# ===============================
+# Kubernetes Tags on Subnets
+# ===============================
+
+resource "aws_ec2_tag" "eks_subnet_tag" {
+  count       = length(var.subnets)
+  resource_id = var.subnets[count.index]
+  key         = "kubernetes.io/cluster/${var.cluster_name}"
+  value       = "shared"
+}
+
+# ===============================
+# EKS Cluster Security Group Rule (Optional Whitelist)
+# ===============================
+
+resource "aws_security_group_rule" "cluster_private_access" {
+  count       = var.cluster_endpoint_whitelist ? 1 : 0
+  type        = "ingress"
+  from_port   = 443
+  to_port     = 443
+  protocol    = "tcp"
+  cidr_blocks = var.cluster_endpoint_access_cidrs
+
+  security_group_id = aws_eks_cluster.eks_cluster.vpc_config[0].cluster_security_group_id
 }

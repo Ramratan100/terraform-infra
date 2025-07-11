@@ -1,3 +1,4 @@
+# VPC + Networking Module
 module "network" {
   source = "../../modules/network"
 
@@ -9,53 +10,71 @@ module "network" {
   vpc_tags                             = var.vpc_tags
   route53_zone                         = var.route53_zone
   azs                                  = var.azs
+
   public_subnets                       = var.public_subnets
   private_subnets                      = var.private_subnets
   database_subnets                     = var.database_subnets
+
   additional_public_routes             = var.additional_public_routes
   additional_private_routes            = var.additional_private_routes
+
   flow_logs_enabled                    = var.flow_logs_enabled
   flow_logs_traffic_type               = var.flow_logs_traffic_type
   flow_logs_file_format                = var.flow_logs_file_format
 }
 
-# IAM Role for EKS Cluster
-resource "aws_iam_role" "eks_cluster_role" {
-  name = "eks-cluster-role"
+# EKS Cluster + Node Groups Module
+module "eks" {
+  source               = "../../modules/eks"
 
-  assume_role_policy = data.aws_iam_policy_document.eks_assume_role_policy.json
+  cluster_name         = var.cluster_name
+  eks_cluster_version  = var.eks_cluster_version
+  region               = var.region
+  vpc_id               = module.network.vpc_id
+  subnets              = concat(module.network.private_subnets, module.network.database_subnets)
 
-  tags = {
-    Name = "eks-cluster-role"
-  }
-}
+  endpoint_private     = var.endpoint_private
+  endpoint_public      = var.endpoint_public
 
-# Trust Policy for EKS Cluster Role
-data "aws_iam_policy_document" "eks_assume_role_policy" {
-  statement {
-    effect = "Allow"
+  config_output_path   = var.config_output_path
+  kubeconfig_name      = var.kubeconfig_name
 
-    principals {
-      type        = "Service"
-      identifiers = ["eks.amazonaws.com"]
+  create_node_group          = var.create_node_group
+  force_update_version       = var.force_update_version
+  cluster_endpoint_whitelist = var.cluster_endpoint_whitelist
+  cluster_endpoint_access_cidrs = var.cluster_endpoint_access_cidrs
+
+  tags = var.tags
+
+  node_groups = {
+    api_node_group = {
+      subnets               = module.network.private_subnets
+      instance_type         = var.api_node_instance_type
+      disk_size             = var.api_node_disk_size
+      desired_capacity      = var.api_node_desired_capacity
+      max_capacity          = var.api_node_max_capacity
+      min_capacity          = var.api_node_min_capacity
+      ssh_key               = var.ssh_key_name
+      security_group_ids    = []
+      tags                  = { "role" = "api" }
+      labels                = { "nodegroup" = "api" }
+      capacity_type         = var.api_node_capacity_type
+      ami_type              = var.api_node_ami_type
     }
 
-    actions = ["sts:AssumeRole"]
+    db_node_group = {
+      subnets               = module.network.database_subnets
+      instance_type         = var.db_node_instance_type
+      disk_size             = var.db_node_disk_size
+      desired_capacity      = var.db_node_desired_capacity
+      max_capacity          = var.db_node_max_capacity
+      min_capacity          = var.db_node_min_capacity
+      ssh_key               = var.ssh_key_name
+      security_group_ids    = []
+      tags                  = { "role" = "database" }
+      labels                = { "nodegroup" = "database" }
+      capacity_type         = var.db_node_capacity_type
+      ami_type              = var.db_node_ami_type
+    }
   }
-}
-
-# Attach AmazonEKSClusterPolicy to Role
-resource "aws_iam_role_policy_attachment" "eks_cluster_AmazonEKSClusterPolicy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-  role       = aws_iam_role.eks_cluster_role.name
-}
-
-# EKS Cluster Module
-module "eks" {
-  source            = "../../modules/eks"
-  cluster_name      = "ramratan-cluster"
-  cluster_role_arn  = aws_iam_role.eks_cluster_role.arn
-  subnet_ids        = module.network.public_subnets
-  api_subnet_ids    = module.network.private_subnets
-  db_subnet_ids     = module.network.database_subnets
 }

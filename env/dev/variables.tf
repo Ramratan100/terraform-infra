@@ -1,3 +1,4 @@
+# VPC variables
 variable "cidr_block" {
   description = "CIDR block for the VPC"
   type        = string
@@ -92,4 +93,129 @@ variable "flow_logs_file_format" {
   description = "File format for Flow Logs"
   type        = string
   default     = "parquet"
+}
+
+# EKS cluster variables
+variable "cluster_name" {
+  description = "Name for the EKS cluster"
+  type        = string
+}
+
+variable "region" {
+  description = "AWS region"
+  type        = string
+}
+
+variable "eks_cluster_version" {
+  description = "Kubernetes cluster version for EKS"
+  type        = string
+}
+
+variable "config_output_path" {
+  description = "Path where kubeconfig will be generated"
+  type        = string
+}
+
+variable "kubeconfig_name" {
+  description = "Name for the generated kubeconfig"
+  type        = string
+}
+
+variable "ssh_key_name" {
+  description = "SSH key pair name for EC2 instances in EKS node groups"
+  type        = string
+}
+
+variable "endpoint_private" {
+  description = "Enable private API endpoint"
+  type        = bool
+  default     = true
+}
+
+variable "endpoint_public" {
+  description = "Enable public API endpoint"
+  type        = bool
+  default     = true
+}
+
+variable "create_node_group" {
+  description = "Whether to create node groups"
+  type        = bool
+  default     = true
+}
+
+variable "force_update_version" {
+  description = "Force EKS version update"
+  type        = bool
+  default     = false
+}
+
+variable "cluster_endpoint_whitelist" {
+  description = "Enable cluster endpoint CIDR whitelist"
+  type        = bool
+  default     = false
+}
+
+variable "cluster_endpoint_access_cidrs" {
+  description = "List of CIDRs to whitelist for cluster endpoint"
+  type        = list(string)
+  default     = []
+}
+
+# API node group config
+variable "api_node_instance_type" {
+  type = list(string)
+}
+
+variable "api_node_disk_size" {
+  type = number
+}
+
+variable "api_node_desired_capacity" {
+  type = number
+}
+
+variable "api_node_max_capacity" {
+  type = number
+}
+
+variable "api_node_min_capacity" {
+  type = number
+}
+
+variable "api_node_capacity_type" {
+  type = string
+}
+
+variable "api_node_ami_type" {
+  type = string
+}
+
+# DB node group config
+variable "db_node_instance_type" {
+  type = list(string)
+}
+
+variable "db_node_disk_size" {
+  type = number
+}
+
+variable "db_node_desired_capacity" {
+  type = number
+}
+
+variable "db_node_max_capacity" {
+  type = number
+}
+
+variable "db_node_min_capacity" {
+  type = number
+}
+
+variable "db_node_capacity_type" {
+  type = string
+}
+
+variable "db_node_ami_type" {
+  type = string
 }
